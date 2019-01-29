@@ -141,28 +141,28 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
             continue
 
         if full_pr["mergeable_state"] != "clean":
+            statuses = make_request(pr["_links"]["statuses"]["href"])
+            status_states = {}
+            for status in statuses:
+                if status["context"] not in status_states:
+                    status_states[status["context"]] = status["state"]
+
             ignore_blocked = False
             if full_pr["mergeable_state"] == "blocked":
                 # Need to figure out if that's because it's blocked by the need of a
-                # bors comment.
-                statuses = make_request(pr["_links"]["statuses"]["href"])
-                status_states = {}
-                for status in statuses:
-                    if status["context"] not in status_states:
-                        status_states[status["context"]] = status["state"]
-
+                # bors comment
                 if all([x == "success" for x in status_states.values()]) and by_bors:
                     ignore_blocked = True
-                    if verbose:
-                        print("Mergeable state is 'blocked' but proceeded with 'bors'")
+                    # if verbose:
+                    #     print("Mergeable state is 'blocked' but proceeded with 'bors'")
 
             if not ignore_blocked:
                 if verbose:
-                    reject_pr(
-                        full_pr, f"mergeable state: {full_pr['mergeable_state']!r}"
-                    )
-                debug_pr(full_pr)
-
+                    reason = f"mergeable state: {full_pr['mergeable_state']!r}"
+                    for key, value in status_states.items():
+                        if value != "success":
+                            reason += f" [{key}={value}]"
+                    reject_pr(full_pr, reason)
                 continue
 
         exclusion_labels = options.get(

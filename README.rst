@@ -29,3 +29,8 @@ Generate a new one and either use it as an environment variable...::
     GITHUB_ACCESS_TOKEN=f011af46d1cae0879b150b174af4c081167313456 justmerge my.toml
 
 Or, put it into a ``.env`` file.
+
+Configuration
+-------------
+
+**NEEDS MORE WORK**
