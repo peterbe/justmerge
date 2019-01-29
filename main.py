@@ -57,18 +57,37 @@ def download_request(url):
 
 def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
 
-    # Download the repos branch protections
-    main_branch = options.get("main_branch", "master")
-    protections = make_request(
-        f"/repos/{owner}/{repo}/branches/{main_branch}/protection"
-    )
-    by_bors = False
-    if "bors" in protections["required_status_checks"]["contexts"]:
-        by_bors = True
+    # Check that the repo exists at all!
+    repo_response = make_request(f"/repos/{owner}/{repo}")
+    if verbose:
+        print(f"Found repo {repo_response['full_name']}")
 
+    # Defaults
+    by_bors = False
     only_one = options.get("only_one", None)
-    if only_one is None:
-        only_one = protections["required_status_checks"]["strict"]
+    requires_approval = options.get("requires_approval", None)
+
+    # Download the repos branch protections
+    main_branch = options.get("main_branch", repo_response["default_branch"])
+    try:
+        protections = make_request(
+            f"/repos/{owner}/{repo}/branches/{main_branch}/protection"
+        )
+        if "bors" in protections["required_status_checks"]["contexts"]:
+            by_bors = True
+
+        if only_one is None:
+            only_one = protections["required_status_checks"]["strict"]
+
+        if requires_approval is None:
+            requires_approval = bool(protections.get("required_pull_request_reviews"))
+
+    except HTTPError as exception:
+        if exception.response.status_code == 404:
+            if verbose:
+                print("Repo has no branch protections. That's fine.")
+        else:
+            raise
 
     merge_method = options.get("merge_method", "bors" if by_bors else "merge")
     if by_bors:
@@ -78,18 +97,12 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 f"which is not compatible with {merge_method!r}. "
             )
 
-    # I wish there was a better way to find this out! Probably is.
-    requires_approval = options.get("requires_approval", None)
-    if requires_approval is None:
-
-        requires_approval = bool(protections.get("required_pull_request_reviews"))
-
-        if not requires_approval and by_bors:
-            bors_toml = make_request(f"/repos/{owner}/{repo}/contents/bors.toml")
-            content = download_request(bors_toml["download_url"])
-            bors_parsed = toml.loads(content)
-            required_approvals = bors_parsed.get("required_approvals", 0)
-            requires_approval = required_approvals > 0
+    if not requires_approval and by_bors:
+        bors_toml = make_request(f"/repos/{owner}/{repo}/contents/bors.toml")
+        content = download_request(bors_toml["download_url"])
+        bors_parsed = toml.loads(content)
+        required_approvals = bors_parsed.get("required_approvals", 0)
+        requires_approval = required_approvals > 0
 
     if verbose:
         print("Repo merge strategy...")
@@ -331,5 +344,7 @@ def cli(configfile, all, dry_run, verbose):
         if not configfile:
             error_out(f"{folder} is empty.")
 
-    for conf in configfile:
+    for i, conf in enumerate(configfile):
+        if i > 0:
+            print("\n")
         run_config_file(conf, verbose=verbose, dry_run=dry_run)
