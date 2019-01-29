@@ -1,0 +1,19 @@
+# This is a sample template. Fill in your blanks.
+
+# These are the only mandatory keys
+owner = "mygithuborg"
+repo = "myreponame"
+
+# This allows you to go verbose even if you don't use the --verbose
+# cli option
+#verbose = true
+
+# If a PR has one of these explicit labels, leave it untouched.
+#exclusion_labels = [ "dontmerge", "bors-dont-merge" ]
+
+# Only touch PRs created by these specific users.
+# Note that the defaults are these common library upgrading bots.
+#inclusion_users = [ "renovate", "pyup-bot" ]
+
+# Other options are 'squash', 'rebase', or 'bors'
+#merge_method = "merge"

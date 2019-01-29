@@ -1,5 +1,7 @@
+from pathlib import Path
 from urllib.parse import urlencode
 
+import click
 import toml
 from decouple import config
 from requests.exceptions import HTTPError
@@ -148,9 +150,7 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 for status in statuses:
                     if status["context"] not in status_states:
                         status_states[status["context"]] = status["state"]
-                # from pprint import pprint
 
-                # pprint(status_states)
                 if all([x == "success" for x in status_states.values()]) and by_bors:
                     ignore_blocked = True
                     if verbose:
@@ -164,8 +164,6 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 debug_pr(full_pr)
 
                 continue
-        # Check if it requires approval and that it has been approved.
-        # XXX WORK HARDER
 
         exclusion_labels = options.get(
             "exclusion_labels", ["dontmerge", "bors-dont-merge"]
@@ -184,7 +182,7 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
             if _dont:
                 continue
 
-        inclusion_users = options.get("inclusion_users")
+        inclusion_users = options.get("inclusion_users", ["renovate", "pyup-bot"])
         if inclusion_users:
             if not isinstance(inclusion_users, (list, tuple)):
                 inclusion_users = [inclusion_users]
@@ -230,21 +228,14 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                     # print(response)
             else:
                 # Just a plain comment is enough.
-                # comments_url =
-                # debug_pr(full_pr)
                 # Need to check if there already is a "bors r+" comment.
                 comments_url = full_pr["_links"]["comments"]["href"]
                 comments = make_request(comments_url)
                 chicken_out = False
-                # print(comments)
                 for comment in comments:
                     if "bors r+" in comment["body"]:
                         chicken_out = True
                         print("⚠️", repr_pr(full_pr), "already has a 'bors r+' comment")
-                    # else:
-                    #     from pprint import pprint
-
-                    #     pprint(comment)
                 if chicken_out:
                     continue
                 response = make_request(
@@ -295,41 +286,50 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
             break
 
 
-def main():
+def run_config_file(config, verbose=False, dry_run=False):
+    if isinstance(config, Path):
+        with config.open() as f:
+            repo = toml.load(f)
+    else:
+        repo = toml.load(config)
 
-    # find_in_repo("peterbe", "gg", merge_method="squash")
+    try:
+        assert repo["owner"]
+        assert repo["repo"]
+    except (AssertionError, KeyError) as exc:
+        error_out(f"Missing config key: {exc}")
 
-    # find_in_repo(
-    #     "peterbe",
-    #     "django-peterbecom",
-    #     verbose=1,
-    #     merge_method="squash",
-    #     exclusion_labels="dontmerge",
-    #     inclusion_users="pyup-bot",
-    # )
-
-    # find_in_repo(
-    #     "mozilla-services",
-    #     "tecken",
-    #     verbose=1,
-    #     merge_method="squash",
-    #     exclusion_labels="dontmerge",
-    #     inclusion_users=["renovate", "pyup-bot"],
-    #     # only_one=True,
-    # )
-
+    # The config might explicitly dictate to be verbose even if the cli
+    # flag for 'verbose' wasn't set.
+    verbose = verbose or repo.pop("verbose", False)
     find_in_repo(
-        "mozilla",
-        "buildhub2",
-        verbose=1,
-        # merge_method="bors_comment",
-        # merge_method="bors_comment",
-        exclusion_labels="dontmerge",
-        inclusion_users=["renovate", "pyup-bot"],
-        only_one=1,  # TEMPORARY SO IT DOESN'T MERGE TOO MANY!
+        repo.pop("owner"), repo.pop("repo"), verbose=verbose, dry_run=dry_run, **repo
     )
 
 
-if __name__ == "__main__":
-    # XXX switch to Click
-    main()
+def error_out(msg, raise_abort=True):
+    click.echo(click.style(msg, fg="red"))
+    if raise_abort:
+        raise click.Abort
+
+
+@click.command()
+@click.option("-v", "--verbose", is_flag=True)
+@click.option("-d", "--dry-run", is_flag=True)
+@click.option("-a", "--all", is_flag=True)
+@click.argument("configfile", type=click.File("r"), nargs=-1)
+def cli(configfile, all, dry_run, verbose):
+    if not all and not configfile:
+        error_out("No config files provided and --all not used.")
+    if all and configfile:
+        error_out("Make up your mind. Either use --all or specify files by name.")
+    if all:
+        folder = Path("conf.d")
+        if not folder.is_dir():
+            folder.mkdir()
+        configfile = list(folder.glob("*.toml"))
+        if not configfile:
+            error_out(f"{folder} is empty.")
+
+    for conf in configfile:
+        run_config_file(conf, verbose=verbose, dry_run=dry_run)

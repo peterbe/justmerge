@@ -22,12 +22,12 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
-    install_requires=["requests", "python-decouple", "toml"],
+    install_requires=["requests", "python-decouple", "toml", "click"],
     extras_require={"dev": ["tox", "twine", "therapist", "black", "flake8"]},
-    # entry_points="""
-    #     [console_scripts]
-    #     gg=gg.main:cli
-    # """,
+    entry_points="""
+        [console_scripts]
+        justmerge=main:cli
+    """,
     # setup_requires=["pytest-runner"],
     # tests_require=["pytest", "pytest-mock", "requests_mock"],
     keywords="github",
