@@ -314,7 +314,8 @@ def run_config_file(config, verbose=False, dry_run=False):
 
     # The config might explicitly dictate to be verbose even if the cli
     # flag for 'verbose' wasn't set.
-    verbose = verbose or repo.pop("verbose", False)
+    repo_verbose = repo.pop("verbose", False)
+    verbose = verbose or repo_verbose
     find_in_repo(
         repo.pop("owner"), repo.pop("repo"), verbose=verbose, dry_run=dry_run, **repo
     )

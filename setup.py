@@ -10,7 +10,7 @@ setup(
     author="Peter Bengtsson",
     author_email="mail@peterbe.com",
     url="https://github.com/peterbe/justmerge",
-    description="Just merge the GitHub Pull Requests that are ready to go",
+    description="Just merge the GitHub Pull Requests that are ready to merge",
     long_description=open(path.join(_here, "README.rst")).read(),
     license="MIT",
     classifiers=[
@@ -28,7 +28,5 @@ setup(
         [console_scripts]
         justmerge=main:cli
     """,
-    # setup_requires=["pytest-runner"],
-    # tests_require=["pytest", "pytest-mock", "requests_mock"],
     keywords="github",
 )
