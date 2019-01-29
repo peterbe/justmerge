@@ -1,3 +1,4 @@
 justmerge.egg-info
 requests_cache*.sqlite
 conf.d/*.toml
+dist/
