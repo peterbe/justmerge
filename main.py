@@ -133,7 +133,10 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
         print(html_url, "is NOT mergeable", reason, "😢", repr_pr(full_pr))
 
     def make_bors_rplus_comment():
-        return "bors r+\n\n(made with 'justmerge')\n"
+        return (
+            "bors r+\n\n"
+            "(made with [justmerge](https://github.com/peterbe/justmerge))\n"
+        )
 
     for pr in prs:
         if pr["locked"]:
