@@ -66,7 +66,7 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
     by_bors = False
     only_one = options.get("only_one", None)
     requires_approval = options.get("requires_approval", None)
-    update_behind = options.get("update_behind", False)
+    update_behind = options.get("update_behind", [])
 
     # Download the repos branch protections
     main_branch = options.get("main_branch", repo_response["default_branch"])
@@ -139,6 +139,22 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
             "(made with [justmerge](https://github.com/peterbe/justmerge))\n"
         )
 
+    def check_update_behind(p):
+        if update_behind:
+            # Check if the list of users match this PRs user.
+            login = full_pr["user"]["login"]
+            return is_user_overlap(login, update_behind)
+        return False
+
+    def is_user_overlap(login, inclusion_users):
+        inclusion_users = set(inclusion_users)
+        logins = set([login])
+        if login.endswith("[bot]"):
+            logins.add(login.replace("[bot]", ""))
+        return bool(logins & inclusion_users)
+
+    updateable = []
+
     for pr in prs:
         if pr["locked"]:
             continue
@@ -156,50 +172,6 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                     reason = "Dirty!"
                 reject_pr(full_pr, reason)
             continue
-
-        if full_pr["mergeable_state"] != "clean":
-            statuses = make_request(pr["_links"]["statuses"]["href"])
-            status_states = {}
-            for status in statuses:
-                if status["context"] not in status_states:
-                    status_states[status["context"]] = status["state"]
-
-            ignore_blocked = False
-            if full_pr["mergeable_state"] == "blocked":
-                # Need to figure out if that's because it's blocked by the need of a
-                # bors comment
-                if all([x == "success" for x in status_states.values()]) and by_bors:
-                    ignore_blocked = True
-
-            if full_pr["mergeable_state"] == "behind" and update_behind:
-                # If the all the statuses passed, and it's just behind, go ahead
-                # and update it.
-                if all([x == "success" for x in status_states.values()]):
-                    merges_url = full_pr["base"]["repo"]["merges_url"]
-                    response = make_request(
-                        merges_url,
-                        {
-                            "base": full_pr["head"]["ref"],
-                            "head": main_branch,
-                            "commit_message": "Merge master into branch",
-                        },
-                        method="POST",
-                    )
-                    print(
-                        f"Branch updated ({main_branch} merged in) 🤨", repr_pr(full_pr)
-                    )
-                    if verbose:
-                        merged_url = html_url + f"/commits/{response['sha']}"
-                        print("\tMerge URL: ", merged_url)
-
-            if not ignore_blocked:
-                if verbose:
-                    reason = f"mergeable state: {full_pr['mergeable_state']!r}"
-                    for key, value in status_states.items():
-                        if value != "success":
-                            reason += f" [{key}={value}]"
-                    reject_pr(full_pr, reason)
-                continue
 
         exclusion_labels = options.get(
             "exclusion_labels", ["dontmerge", "bors-dont-merge"]
@@ -222,15 +194,39 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
         if inclusion_users:
             if not isinstance(inclusion_users, (list, tuple)):
                 inclusion_users = [inclusion_users]
-            inclusion_users = set(inclusion_users)
             login = full_pr["user"]["login"]
-            logins = set([login])
-            if login.endswith("[bot]"):
-                logins.add(login.replace("[bot]", ""))
-
-            if not logins & inclusion_users:
+            if not is_user_overlap(login, inclusion_users):
                 if verbose:
                     reject_pr(full_pr, f"exclusion user {login} != {inclusion_users}")
+                continue
+
+        if full_pr["mergeable_state"] != "clean":
+            statuses = make_request(pr["_links"]["statuses"]["href"])
+            status_states = {}
+            for status in statuses:
+                if status["context"] not in status_states:
+                    status_states[status["context"]] = status["state"]
+
+            ignore_blocked = False
+            if full_pr["mergeable_state"] == "blocked":
+                # Need to figure out if that's because it's blocked by the need of a
+                # bors comment
+                if all([x == "success" for x in status_states.values()]) and by_bors:
+                    ignore_blocked = True
+
+            if full_pr["mergeable_state"] == "behind" and check_update_behind(full_pr):
+                # If the all the statuses passed, and it's just behind, go ahead
+                # and update it.
+                if all([x == "success" for x in status_states.values()]):
+                    updateable.append(full_pr)
+
+            if not ignore_blocked:
+                if verbose:
+                    reason = f"mergeable state: {full_pr['mergeable_state']!r}"
+                    for key, value in status_states.items():
+                        if value != "success":
+                            reason += f" [{key}={value}]"
+                    reject_pr(full_pr, reason)
                 continue
 
         print(html_url, "is", "✅", repr_pr(full_pr))
@@ -281,6 +277,10 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 if verbose:
                     print("\tComment URL:", response["html_url"])
 
+                # Suppose we did this, it'll take a while till they get merged.
+                # so we don't want to bother update those that can be updated.
+                updateable = []  # Basically, undoes it every time.
+
         elif merge_method in ("merge", "squash", "rebase"):
             if requires_approval:
                 # Need to make an approval first, then press the green button.
@@ -320,6 +320,25 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 print("But, remember... Only 1 merge at a time❗️")
                 print()
             break
+
+    # If there are branches that *can* be updated, then let's do so.
+    if updateable:
+        assert update_behind
+        for full_pr in updateable:
+            merges_url = full_pr["base"]["repo"]["merges_url"]
+            response = make_request(
+                merges_url,
+                {
+                    "base": full_pr["head"]["ref"],
+                    "head": main_branch,
+                    "commit_message": "Merge master into branch",
+                },
+                method="POST",
+            )
+            print(f"Branch updated 🤨 ({main_branch} merged in)", repr_pr(full_pr))
+            if verbose:
+                merged_url = html_url + f"/commits/{response['sha']}"
+                print("\tMerge URL: ", merged_url)
 
 
 def run_config_file(config, verbose=False, dry_run=False):

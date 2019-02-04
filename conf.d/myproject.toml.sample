@@ -20,5 +20,7 @@ repo = "myreponame"
 #merge_method = "merge"
 
 # When a isn't mergeable just because it's behind, you can trigger an update
-# which means GitHub merges master into the branch.
-#update_behind = false
+# which means GitHub merges master into the branch. For example, you might
+# want to set this exclusively for 'pyup-bot'.
+# Only do this for the following PR creators...
+#update_behind = []
