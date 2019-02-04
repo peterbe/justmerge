@@ -66,6 +66,7 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
     by_bors = False
     only_one = options.get("only_one", None)
     requires_approval = options.get("requires_approval", None)
+    update_behind = options.get("update_behind", False)
 
     # Download the repos branch protections
     main_branch = options.get("main_branch", repo_response["default_branch"])
@@ -169,8 +170,27 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
                 # bors comment
                 if all([x == "success" for x in status_states.values()]) and by_bors:
                     ignore_blocked = True
-                    # if verbose:
-                    #     print("Mergeable state is 'blocked' but proceeded with 'bors'")
+
+            if full_pr["mergeable_state"] == "behind" and update_behind:
+                # If the all the statuses passed, and it's just behind, go ahead
+                # and update it.
+                if all([x == "success" for x in status_states.values()]):
+                    merges_url = full_pr["base"]["repo"]["merges_url"]
+                    response = make_request(
+                        merges_url,
+                        {
+                            "base": full_pr["head"]["ref"],
+                            "head": main_branch,
+                            "commit_message": "Merge master into branch",
+                        },
+                        method="POST",
+                    )
+                    print(
+                        f"Branch updated ({main_branch} merged in) 🤨", repr_pr(full_pr)
+                    )
+                    if verbose:
+                        merged_url = html_url + f"/commits/{response['sha']}"
+                        print("\tMerge URL: ", merged_url)
 
             if not ignore_blocked:
                 if verbose:
