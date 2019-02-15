@@ -67,6 +67,7 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
     only_one = options.get("only_one", None)
     requires_approval = options.get("requires_approval", None)
     update_behind = options.get("update_behind", [])
+    inclusion_titles = options.get("inclusion_titles", None)
 
     # Download the repos branch protections
     main_branch = options.get("main_branch", repo_response["default_branch"])
@@ -111,6 +112,8 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
         print("\tBy 'bors':".ljust(30), by_bors)
         print("\tOne merge at a time:".ljust(30), only_one)
         print("\tRequires review approval:".ljust(30), requires_approval)
+        if inclusion_titles:
+            print("\tOnly titles matching:".ljust(30), inclusion_titles)
         print()
 
     # The sort means those least recently updated first.
@@ -198,6 +201,12 @@ def find_in_repo(owner, repo, verbose=False, dry_run=False, **options):
             if not is_user_overlap(login, inclusion_users):
                 if verbose:
                     reject_pr(full_pr, f"exclusion user {login} != {inclusion_users}")
+                continue
+
+        inclusion_titles = options.get("inclusion_titles", None)
+        if inclusion_titles is not None:
+            if not any(x in full_pr["title"] for x in inclusion_titles):
+                reject_pr(full_pr, f"exclusion title {full_pr['title']!r}")
                 continue
 
         if full_pr["mergeable_state"] != "clean":
